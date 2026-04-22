@@ -1,0 +1,17 @@
+{
+  "name": "meeting-notes",
+  "version": "1.0.0",
+  "description": "上傳錄音檔自動產出會議記錄",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "@google/genai": "^0.3.0",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.0",
+    "multer": "^1.4.5-lts.1"
+  }
+}

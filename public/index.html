@@ -1,0 +1,662 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>會議記錄工具</title>
+<style>
+  * { box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'Segoe UI', 'PingFang TC', 'Microsoft JhengHei', sans-serif;
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 56px 24px;
+    background: #fbfbfd;
+    color: #1d1d1f;
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .topbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 40px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid #f0f0f2;
+  }
+  .brand { font-size: 20px; font-weight: 600; letter-spacing: -0.01em; }
+  .user-area { display: flex; align-items: center; gap: 16px; font-size: 14px; color: #86868b; }
+
+  .login-hero {
+    min-height: 60vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+  }
+
+  h1 { font-size: 40px; font-weight: 600; letter-spacing: -0.02em; margin-bottom: 12px; }
+  .subtitle { font-size: 17px; color: #86868b; margin-bottom: 48px; }
+
+  .dropzone {
+    display: block;
+    border: 1px dashed #d2d2d7;
+    border-radius: 18px;
+    padding: 64px 32px;
+    text-align: center;
+    background: #ffffff;
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s;
+  }
+  .dropzone:hover, .dropzone.dragover {
+    border-color: #0071e3;
+    background: #f5f5f7;
+  }
+  .dropzone input { display: none; }
+  .dropzone-hint { color: #86868b; font-size: 14px; margin-top: 12px; }
+  .filename { margin-top: 20px; font-weight: 500; color: #0071e3; }
+
+  button {
+    margin-top: 24px;
+    padding: 14px 36px;
+    font-size: 16px;
+    font-weight: 500;
+    border: none;
+    border-radius: 980px;
+    background: #0071e3;
+    color: #fff;
+    cursor: pointer;
+    transition: background 0.2s, transform 0.1s;
+    letter-spacing: -0.01em;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+  }
+  button:hover:not(:disabled) { background: #0077ed; }
+  button:active:not(:disabled) { transform: scale(0.98); }
+  button:disabled { background: #d2d2d7; color: #86868b; cursor: not-allowed; }
+
+  button.secondary {
+    background: #f5f5f7;
+    color: #1d1d1f;
+    padding: 8px 18px;
+    font-size: 13px;
+    margin-top: 0;
+  }
+  button.secondary:hover:not(:disabled) { background: #e8e8ea; }
+
+  .login-btn svg { background: #fff; border-radius: 4px; padding: 2px; }
+
+  .status {
+    margin-top: 32px;
+    padding: 18px 20px;
+    border-radius: 14px;
+    background: #fff8e1;
+    color: #8a6d00;
+    display: none;
+    font-size: 15px;
+  }
+  .status.show { display: block; }
+  .status.error { background: #fff0f0; color: #c72a2a; white-space: pre-wrap; word-break: break-word; }
+
+  .result {
+    margin-top: 32px;
+    padding: 32px;
+    background: #ffffff;
+    border-radius: 18px;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.04);
+    display: none;
+    white-space: pre-wrap;
+    word-break: break-word;
+    line-height: 1.7;
+  }
+  .result.show { display: block; }
+
+  .result-actions {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 24px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid #f0f0f2;
+  }
+  .result-actions button {
+    margin: 0;
+    padding: 8px 18px;
+    font-size: 13px;
+    background: #f5f5f7;
+    color: #1d1d1f;
+    border-radius: 980px;
+  }
+  .result-actions button:hover:not(:disabled) { background: #e8e8ea; }
+
+  .spinner {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    border: 2px solid rgba(0,0,0,0.1);
+    border-top-color: #0071e3;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin-right: 10px;
+    vertical-align: middle;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .view { display: none; }
+  .view.show { display: block; }
+
+  /* Notes list */
+  .notes-section { margin-top: 56px; }
+  .section-title { font-size: 24px; font-weight: 600; letter-spacing: -0.01em; margin-bottom: 20px; }
+  .notes-list { display: flex; flex-direction: column; gap: 8px; }
+  .note-item {
+    padding: 16px 20px;
+    background: #fff;
+    border-radius: 12px;
+    cursor: pointer;
+    transition: transform 0.15s, box-shadow 0.15s;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+  }
+  .note-item:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.06); }
+  .note-item-title { font-weight: 500; font-size: 16px; color: #1d1d1f; }
+  .note-item-date { color: #86868b; font-size: 13px; white-space: nowrap; }
+  .notes-empty, .notes-loading {
+    padding: 32px 24px;
+    text-align: center;
+    color: #86868b;
+    font-size: 14px;
+    background: #fff;
+    border-radius: 12px;
+  }
+
+  /* Modal */
+  .modal {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.4);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 100;
+    padding: 24px;
+    backdrop-filter: blur(4px);
+  }
+  .modal.show { display: flex; }
+  .modal-content {
+    background: #fff;
+    border-radius: 18px;
+    max-width: 900px;
+    width: 100%;
+    max-height: 90vh;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 20px;
+    padding: 32px;
+    position: relative;
+  }
+  .modal-main {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+  .modal-side {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    align-self: start;
+    padding-top: 48px;
+  }
+  .modal-side button {
+    margin: 0;
+    padding: 10px 20px;
+    font-size: 14px;
+    white-space: nowrap;
+  }
+  .modal-side button.danger {
+    background: #f5f5f7;
+    color: #c72a2a;
+  }
+  .modal-side button.danger:hover:not(:disabled) { background: #ffe0e0; }
+
+  @media (max-width: 640px) {
+    .modal-content { grid-template-columns: 1fr; }
+    .modal-side { flex-direction: row; padding-top: 0; }
+  }
+  .modal-close {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    background: #f5f5f7;
+    border: none;
+    border-radius: 50%;
+    width: 32px;
+    height: 32px;
+    margin: 0;
+    padding: 0;
+    font-size: 14px;
+    color: #1d1d1f;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .modal-close:hover { background: #e8e8ea; }
+  .note-title-input {
+    font-size: 24px;
+    font-weight: 600;
+    border: none;
+    padding: 4px 0;
+    background: transparent;
+    width: 100%;
+    letter-spacing: -0.02em;
+    outline: none;
+    font-family: inherit;
+    color: #1d1d1f;
+  }
+  .note-title-input:focus {
+    background: #f5f5f7;
+    border-radius: 8px;
+    padding: 4px 10px;
+    margin: 0 -10px;
+  }
+  .note-meta {
+    color: #86868b;
+    font-size: 13px;
+    margin: 10px 0 20px;
+    display: flex;
+    gap: 16px;
+    align-items: center;
+  }
+  .saved-indicator {
+    color: #34a853;
+    display: none;
+  }
+  .saved-indicator.show { display: inline; }
+  .note-content-editor {
+    flex: 1;
+    min-height: 360px;
+    border: 1px solid #e0e0e2;
+    border-radius: 12px;
+    padding: 16px;
+    font-family: -apple-system, BlinkMacSystemFont, 'PingFang TC', 'Microsoft JhengHei', sans-serif;
+    font-size: 14px;
+    line-height: 1.7;
+    resize: vertical;
+    outline: none;
+    color: #1d1d1f;
+    background: #fafafa;
+  }
+  .note-content-editor:focus {
+    border-color: #0071e3;
+    background: #fff;
+  }
+  .modal-actions {
+    display: flex;
+    gap: 12px;
+    margin-top: 20px;
+    justify-content: flex-end;
+  }
+  .modal-actions button {
+    margin: 0;
+    padding: 10px 20px;
+    font-size: 14px;
+  }
+  .modal-actions button.danger {
+    background: #f5f5f7;
+    color: #c72a2a;
+  }
+  .modal-actions button.danger:hover:not(:disabled) { background: #ffe0e0; }
+</style>
+</head>
+<body>
+
+<div id="login-view" class="view">
+  <div class="login-hero">
+    <h1>🎙 會議記錄工具</h1>
+    <p class="subtitle">請用公司 Gmail 登入</p>
+    <button id="login-btn" type="button" class="login-btn">
+      <svg width="20" height="20" viewBox="0 0 24 24">
+        <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+        <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+        <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+        <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+      </svg>
+      以 Google 登入
+    </button>
+  </div>
+</div>
+
+<div id="app-view" class="view">
+  <div class="topbar">
+    <div class="brand">🎙 會議記錄工具</div>
+    <div class="user-area">
+      <span id="user-email"></span>
+      <button type="button" id="logout-btn" class="secondary">登出</button>
+    </div>
+  </div>
+
+  <p class="subtitle">上傳會議錄音，自動產出繁體中文會議記錄</p>
+
+  <form id="form">
+    <label class="dropzone" id="dropzone">
+      <div id="dropzone-text">
+        <div style="font-size: 18px;">點此選擇音檔，或拖曳進來</div>
+        <div class="dropzone-hint">支援 .mp3 / .m4a / .wav / .webm / .ogg（最大 200 MB）</div>
+      </div>
+      <div class="filename" id="filename"></div>
+      <input type="file" id="file" name="audio" accept="audio/*,video/mp4,video/webm" />
+    </label>
+    <button type="submit" id="submit" disabled>產生會議記錄</button>
+  </form>
+
+  <div class="status" id="status"></div>
+
+  <div class="result" id="result">
+    <div class="result-actions">
+      <button type="button" id="copy-btn">📋 複製</button>
+      <button type="button" id="download-btn">💾 下載 Markdown</button>
+    </div>
+    <div id="result-text"></div>
+  </div>
+
+  <div class="notes-section">
+    <h2 class="section-title">📋 過往會議記錄</h2>
+    <div id="notes-list" class="notes-list">
+      <div class="notes-loading">載入中...</div>
+    </div>
+  </div>
+</div>
+
+<div id="note-modal" class="modal">
+  <div class="modal-content">
+    <button type="button" id="modal-close" class="modal-close">✕</button>
+    <div class="modal-main">
+      <input type="text" id="note-title-input" class="note-title-input" placeholder="會議標題" />
+      <div class="note-meta">
+        <span id="note-date-meta"></span>
+        <span id="saved-indicator" class="saved-indicator">✓ 已儲存</span>
+      </div>
+      <textarea id="note-content-editor" class="note-content-editor" spellcheck="false"></textarea>
+    </div>
+    <div class="modal-side">
+      <button type="button" id="save-note-btn">💾 儲存變更</button>
+      <button type="button" id="delete-note-btn" class="danger">🗑 刪除</button>
+    </div>
+  </div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script>
+  const { createClient } = window.supabase;
+
+  const SUPABASE_URL = 'https://rbgjebfmjzbhgsjkojah.supabase.co';
+  const SUPABASE_KEY = 'sb_publishable_tf-3s5XZTyRL5YDkvzqjSg_1WLM2x5_';
+  const sb = createClient(SUPABASE_URL, SUPABASE_KEY);
+
+  const loginView = document.getElementById('login-view');
+  const appView = document.getElementById('app-view');
+  const loginBtn = document.getElementById('login-btn');
+  const logoutBtn = document.getElementById('logout-btn');
+  const userEmailEl = document.getElementById('user-email');
+
+  async function checkAuth() {
+    const { data: { session } } = await sb.auth.getSession();
+    if (session) {
+      loginView.classList.remove('show');
+      appView.classList.add('show');
+      userEmailEl.textContent = session.user.email;
+      loadNotes();
+    } else {
+      loginView.classList.add('show');
+      appView.classList.remove('show');
+    }
+  }
+
+  sb.auth.onAuthStateChange(() => checkAuth());
+  checkAuth();
+
+  loginBtn.addEventListener('click', async () => {
+    await sb.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: window.location.origin }
+    });
+  });
+
+  logoutBtn.addEventListener('click', async () => {
+    await sb.auth.signOut();
+  });
+
+  const form = document.getElementById('form');
+  const fileInput = document.getElementById('file');
+  const dropzone = document.getElementById('dropzone');
+  const filenameEl = document.getElementById('filename');
+  const submitBtn = document.getElementById('submit');
+  const statusEl = document.getElementById('status');
+  const resultEl = document.getElementById('result');
+  const resultTextEl = document.getElementById('result-text');
+  const copyBtn = document.getElementById('copy-btn');
+  const downloadBtn = document.getElementById('download-btn');
+
+  let selectedFile = null;
+
+  function setFile(file) {
+    selectedFile = file;
+    filenameEl.textContent = `已選擇：${file.name} (${(file.size / 1024 / 1024).toFixed(2)} MB)`;
+    submitBtn.disabled = false;
+  }
+
+  fileInput.addEventListener('change', (e) => {
+    if (e.target.files[0]) setFile(e.target.files[0]);
+  });
+
+  ['dragenter', 'dragover'].forEach((ev) => {
+    dropzone.addEventListener(ev, (e) => {
+      e.preventDefault();
+      dropzone.classList.add('dragover');
+    });
+  });
+  ['dragleave', 'drop'].forEach((ev) => {
+    dropzone.addEventListener(ev, (e) => {
+      e.preventDefault();
+      dropzone.classList.remove('dragover');
+    });
+  });
+  dropzone.addEventListener('drop', (e) => {
+    const file = e.dataTransfer.files[0];
+    if (file) {
+      fileInput.files = e.dataTransfer.files;
+      setFile(file);
+    }
+  });
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!selectedFile) return;
+
+    submitBtn.disabled = true;
+    resultEl.classList.remove('show');
+    statusEl.classList.add('show');
+    statusEl.classList.remove('error');
+    statusEl.innerHTML = '<span class="spinner"></span>處理中，音檔越長需要越久（1 小時音檔約 2–4 分鐘）...';
+
+    const fd = new FormData();
+    fd.append('audio', selectedFile);
+
+    try {
+      const { data: { session } } = await sb.auth.getSession();
+      if (!session) throw new Error('未登入');
+
+      const res = await fetch(`${SUPABASE_URL}/functions/v1/transcribe`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${session.access_token}` },
+        body: fd,
+      });
+      const data = await res.json();
+      if (!res.ok || data?.error) {
+        const msg = data?.error || `HTTP ${res.status}`;
+        const detail = data?.detail ? `\n詳細：${data.detail}` : '';
+        const status = data?.status ? `\n狀態：${data.status}` : '';
+        throw new Error(msg + status + detail);
+      }
+
+      statusEl.classList.remove('show');
+      resultTextEl.textContent = data.notes;
+      resultEl.classList.add('show');
+      loadNotes();
+    } catch (err) {
+      statusEl.classList.add('error');
+      statusEl.textContent = '錯誤：' + (err.message || '處理失敗');
+    } finally {
+      submitBtn.disabled = false;
+    }
+  });
+
+  copyBtn.addEventListener('click', async () => {
+    await navigator.clipboard.writeText(resultTextEl.textContent);
+    copyBtn.textContent = '✅ 已複製';
+    setTimeout(() => (copyBtn.textContent = '📋 複製'), 2000);
+  });
+
+  downloadBtn.addEventListener('click', () => {
+    const blob = new Blob([resultTextEl.textContent], { type: 'text/markdown' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const date = new Date().toISOString().slice(0, 10);
+    a.href = url;
+    a.download = `meeting-notes-${date}.md`;
+    a.click();
+    URL.revokeObjectURL(url);
+  });
+
+  /* ====== Meeting notes list + edit ====== */
+  const notesListEl = document.getElementById('notes-list');
+  const noteModal = document.getElementById('note-modal');
+  const modalCloseBtn = document.getElementById('modal-close');
+  const noteTitleInput = document.getElementById('note-title-input');
+  const noteContentEditor = document.getElementById('note-content-editor');
+  const noteDateMeta = document.getElementById('note-date-meta');
+  const savedIndicator = document.getElementById('saved-indicator');
+  const saveNoteBtn = document.getElementById('save-note-btn');
+  const deleteNoteBtn = document.getElementById('delete-note-btn');
+
+  let currentNoteId = null;
+
+  function escapeHtml(s) {
+    return String(s ?? '').replace(/[<>&"']/g, c => ({
+      '<':'&lt;','>':'&gt;','&':'&amp;','"':'&quot;',"'":'&#39;'
+    }[c]));
+  }
+
+  function formatDate(ts) {
+    if (!ts) return '';
+    const d = new Date(ts);
+    return d.toLocaleString('zh-TW', {
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit',
+    });
+  }
+
+  async function loadNotes() {
+    const { data, error } = await sb
+      .from('meeting_notes')
+      .select('id, title, created_at, updated_at')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      notesListEl.innerHTML = `<div class="notes-empty">載入失敗：${escapeHtml(error.message)}</div>`;
+      return;
+    }
+
+    if (!data || data.length === 0) {
+      notesListEl.innerHTML = '<div class="notes-empty">還沒有會議記錄，上傳一個音檔試試</div>';
+      return;
+    }
+
+    notesListEl.innerHTML = data.map(n => `
+      <div class="note-item" data-id="${n.id}">
+        <div class="note-item-title">${escapeHtml(n.title || '未命名會議')}</div>
+        <div class="note-item-date">${formatDate(n.created_at)}</div>
+      </div>
+    `).join('');
+
+    notesListEl.querySelectorAll('.note-item').forEach(item => {
+      item.addEventListener('click', () => openNote(item.dataset.id));
+    });
+  }
+
+  async function openNote(id) {
+    const { data, error } = await sb
+      .from('meeting_notes')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (error) {
+      alert('載入失敗：' + error.message);
+      return;
+    }
+
+    currentNoteId = id;
+    noteTitleInput.value = data.title || '';
+    noteContentEditor.value = data.content || '';
+    noteDateMeta.textContent = `建立於 ${formatDate(data.created_at)}` +
+      (data.updated_at && data.updated_at !== data.created_at
+        ? ` · 最後修改 ${formatDate(data.updated_at)}` : '');
+    savedIndicator.classList.remove('show');
+    noteModal.classList.add('show');
+  }
+
+  function closeNote() {
+    noteModal.classList.remove('show');
+    currentNoteId = null;
+  }
+
+  modalCloseBtn.addEventListener('click', closeNote);
+  noteModal.addEventListener('click', (e) => {
+    if (e.target === noteModal) closeNote();
+  });
+
+  saveNoteBtn.addEventListener('click', async () => {
+    if (!currentNoteId) return;
+    saveNoteBtn.disabled = true;
+    const { error } = await sb
+      .from('meeting_notes')
+      .update({
+        title: noteTitleInput.value || '未命名會議',
+        content: noteContentEditor.value,
+      })
+      .eq('id', currentNoteId);
+    saveNoteBtn.disabled = false;
+
+    if (error) {
+      alert('儲存失敗：' + error.message);
+      return;
+    }
+
+    savedIndicator.classList.add('show');
+    setTimeout(() => savedIndicator.classList.remove('show'), 2000);
+    loadNotes();
+  });
+
+  deleteNoteBtn.addEventListener('click', async () => {
+    if (!currentNoteId) return;
+    if (!confirm('確定要刪除這份會議記錄嗎？此動作無法復原。')) return;
+    const { error } = await sb
+      .from('meeting_notes')
+      .delete()
+      .eq('id', currentNoteId);
+    if (error) {
+      alert('刪除失敗：' + error.message);
+      return;
+    }
+    closeNote();
+    loadNotes();
+  });
+</script>
+</body>
+</html>
