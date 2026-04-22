@@ -371,6 +371,116 @@
     color: #c72a2a;
   }
   .modal-actions button.danger:hover:not(:disabled) { background: #ffe0e0; }
+
+  /* Audio player + tabs */
+  .audio-player-wrap {
+    margin: 12px 0 16px;
+    padding: 12px;
+    background: #f5f5f7;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .audio-player-wrap audio {
+    flex: 1;
+    min-width: 240px;
+    height: 36px;
+  }
+  .speed-control {
+    display: inline-flex;
+    gap: 4px;
+    background: #fff;
+    border-radius: 980px;
+    padding: 3px;
+  }
+  .speed-btn {
+    margin: 0;
+    padding: 4px 10px;
+    font-size: 12px;
+    background: transparent;
+    color: #86868b;
+    border-radius: 980px;
+  }
+  .speed-btn.active {
+    background: #1d1d1f;
+    color: #fff;
+  }
+  .speed-btn:hover:not(.active) { background: #e8e8ea; color: #1d1d1f; }
+
+  .tabs {
+    display: flex;
+    gap: 4px;
+    border-bottom: 1px solid #e8e8ea;
+    margin-bottom: 12px;
+  }
+  .tab-btn {
+    margin: 0;
+    padding: 10px 18px;
+    font-size: 14px;
+    background: transparent;
+    color: #86868b;
+    border-radius: 0;
+    border-bottom: 2px solid transparent;
+    transition: color 0.15s, border-color 0.15s;
+  }
+  .tab-btn:hover:not(:disabled) { background: transparent; color: #1d1d1f; }
+  .tab-btn.active {
+    color: #0071e3;
+    border-bottom-color: #0071e3;
+  }
+
+  .tab-panel { display: none; flex: 1; min-height: 300px; }
+  .tab-panel.active { display: flex; flex-direction: column; }
+
+  /* Transcript view */
+  .transcript-view {
+    flex: 1;
+    overflow-y: auto;
+    max-height: 420px;
+    padding: 8px 4px;
+    background: #fff;
+    border-radius: 12px;
+  }
+  .transcript-segment {
+    display: flex;
+    gap: 12px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .transcript-segment:hover { background: #f5f5f7; }
+  .transcript-segment.playing { background: #e6f0ff; }
+  .transcript-time {
+    color: #86868b;
+    font-size: 12px;
+    font-family: -apple-system, monospace;
+    flex-shrink: 0;
+    padding-top: 2px;
+    min-width: 48px;
+  }
+  .transcript-speaker {
+    font-weight: 600;
+    font-size: 13px;
+    color: #0071e3;
+    flex-shrink: 0;
+    min-width: 80px;
+    padding-top: 2px;
+  }
+  .transcript-text {
+    font-size: 14px;
+    line-height: 1.6;
+    color: #1d1d1f;
+    flex: 1;
+  }
+  .transcript-empty {
+    padding: 32px;
+    text-align: center;
+    color: #86868b;
+    font-size: 14px;
+  }
 </style>
 </head>
 <body>
@@ -455,7 +565,30 @@
         <span id="note-date-meta"></span>
         <span id="saved-indicator" class="saved-indicator">✓ 已儲存</span>
       </div>
-      <textarea id="note-content-editor" class="note-content-editor" spellcheck="false"></textarea>
+
+      <div id="audio-player-wrap" class="audio-player-wrap" style="display:none;">
+        <audio id="audio-player" controls preload="metadata"></audio>
+        <div class="speed-control">
+          <button type="button" class="speed-btn active" data-speed="1">1x</button>
+          <button type="button" class="speed-btn" data-speed="1.25">1.25x</button>
+          <button type="button" class="speed-btn" data-speed="1.5">1.5x</button>
+        </div>
+      </div>
+
+      <div class="tabs">
+        <button type="button" class="tab-btn active" data-tab="summary">📝 摘要</button>
+        <button type="button" class="tab-btn" data-tab="transcript">🗣 逐字稿</button>
+      </div>
+
+      <div id="tab-summary" class="tab-panel active">
+        <textarea id="note-content-editor" class="note-content-editor" spellcheck="false"></textarea>
+      </div>
+
+      <div id="tab-transcript" class="tab-panel">
+        <div id="transcript-view" class="transcript-view">
+          <div class="transcript-empty">這筆記錄沒有逐字稿</div>
+        </div>
+      </div>
     </div>
     <div class="modal-side">
       <button type="button" id="save-note-btn">💾 儲存變更</button>
@@ -547,24 +680,41 @@
     }
   });
 
-  async function uploadAudio(file) {
+  async function uploadAudio(file, durationSeconds) {
     submitBtn.disabled = true;
     resultEl.classList.remove('show');
     statusEl.classList.add('show');
     statusEl.classList.remove('error');
-    statusEl.innerHTML = '<span class="spinner"></span>處理中，音檔越長需要越久（1 小時音檔約 2–4 分鐘）...';
-
-    const fd = new FormData();
-    fd.append('audio', file);
+    statusEl.innerHTML = '<span class="spinner"></span>上傳音檔中...';
 
     try {
       const { data: { session } } = await sb.auth.getSession();
       if (!session) throw new Error('未登入');
 
+      // 1. Upload audio to Storage first (avoids Edge Function body size limit)
+      const ext = (file.name.split('.').pop() || 'webm').toLowerCase();
+      const ts = new Date().toISOString().replace(/[:.]/g, '-');
+      const audioPath = `${session.user.id}/${ts}.${ext}`;
+
+      const { error: upErr } = await sb.storage
+        .from('meeting-audio')
+        .upload(audioPath, file, { contentType: file.type || 'audio/webm' });
+      if (upErr) throw new Error('上傳音檔失敗：' + upErr.message);
+
+      statusEl.innerHTML = '<span class="spinner"></span>處理中，正在產生摘要與逐字稿（1 小時約 2–4 分鐘）...';
+
+      // 2. Call Edge Function with Storage path
       const res = await fetch(`${SUPABASE_URL}/functions/v1/transcribe`, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${session.access_token}` },
-        body: fd,
+        headers: {
+          'Authorization': `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          audio_path: audioPath,
+          mime_type: file.type || 'audio/webm',
+          duration_seconds: durationSeconds ?? null,
+        }),
       });
       const data = await res.json();
       if (!res.ok || data?.error) {
@@ -661,8 +811,9 @@
         const blob = new Blob(recordedChunks, { type: mimeType });
         const ts = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
         const file = new File([blob], `recording-${ts}.webm`, { type: 'audio/webm' });
+        const durationSec = Math.round((Date.now() - recordStartTime) / 1000);
         recordedChunks = [];
-        await uploadAudio(file);
+        await uploadAudio(file, durationSec);
       });
 
       if (displayStream) {
@@ -772,6 +923,73 @@
     });
   }
 
+  const audioPlayerWrap = document.getElementById('audio-player-wrap');
+  const audioPlayer = document.getElementById('audio-player');
+  const transcriptView = document.getElementById('transcript-view');
+  const tabBtns = document.querySelectorAll('.tab-btn');
+  const tabPanels = {
+    summary: document.getElementById('tab-summary'),
+    transcript: document.getElementById('tab-transcript'),
+  };
+  const speedBtns = document.querySelectorAll('.speed-btn');
+
+  let currentTranscript = [];
+  let currentSegmentEls = [];
+
+  function switchTab(name) {
+    tabBtns.forEach(b => b.classList.toggle('active', b.dataset.tab === name));
+    Object.entries(tabPanels).forEach(([k, el]) => el.classList.toggle('active', k === name));
+  }
+
+  tabBtns.forEach(b => b.addEventListener('click', () => switchTab(b.dataset.tab)));
+
+  speedBtns.forEach(b => {
+    b.addEventListener('click', () => {
+      speedBtns.forEach(x => x.classList.toggle('active', x === b));
+      audioPlayer.playbackRate = parseFloat(b.dataset.speed);
+    });
+  });
+
+  function renderTranscript(segments) {
+    currentTranscript = Array.isArray(segments) ? segments : [];
+    currentSegmentEls = [];
+    if (currentTranscript.length === 0) {
+      transcriptView.innerHTML = '<div class="transcript-empty">這筆記錄沒有逐字稿</div>';
+      return;
+    }
+
+    transcriptView.innerHTML = '';
+    currentTranscript.forEach((seg, i) => {
+      const el = document.createElement('div');
+      el.className = 'transcript-segment';
+      el.dataset.t = seg.t;
+      el.dataset.index = i;
+      const mm = String(Math.floor(seg.t / 60)).padStart(2, '0');
+      const ss = String(Math.floor(seg.t % 60)).padStart(2, '0');
+      el.innerHTML = `
+        <span class="transcript-time">${mm}:${ss}</span>
+        <span class="transcript-speaker">${escapeHtml(seg.speaker || '—')}</span>
+        <span class="transcript-text">${escapeHtml(seg.text || '')}</span>
+      `;
+      el.addEventListener('click', () => {
+        audioPlayer.currentTime = seg.t;
+        audioPlayer.play();
+      });
+      transcriptView.appendChild(el);
+      currentSegmentEls.push(el);
+    });
+  }
+
+  audioPlayer.addEventListener('timeupdate', () => {
+    const t = audioPlayer.currentTime;
+    let activeIdx = -1;
+    for (let i = 0; i < currentTranscript.length; i++) {
+      if (currentTranscript[i].t <= t) activeIdx = i;
+      else break;
+    }
+    currentSegmentEls.forEach((el, i) => el.classList.toggle('playing', i === activeIdx));
+  });
+
   async function openNote(id) {
     const { data, error } = await sb
       .from('meeting_notes')
@@ -791,12 +1009,43 @@
       (data.updated_at && data.updated_at !== data.created_at
         ? ` · 最後修改 ${formatDate(data.updated_at)}` : '');
     savedIndicator.classList.remove('show');
+
+    // Load audio (signed URL, 1 hour valid)
+    if (data.audio_path) {
+      const { data: signed, error: signErr } = await sb.storage
+        .from('meeting-audio')
+        .createSignedUrl(data.audio_path, 3600);
+      if (!signErr && signed?.signedUrl) {
+        audioPlayer.src = signed.signedUrl;
+        audioPlayerWrap.style.display = 'flex';
+      } else {
+        audioPlayer.removeAttribute('src');
+        audioPlayerWrap.style.display = 'none';
+      }
+    } else {
+      audioPlayer.removeAttribute('src');
+      audioPlayerWrap.style.display = 'none';
+    }
+
+    // Reset speed
+    speedBtns.forEach(b => b.classList.toggle('active', b.dataset.speed === '1'));
+    audioPlayer.playbackRate = 1;
+
+    // Load transcript
+    renderTranscript(data.transcript || []);
+    switchTab('summary');
+
     noteModal.classList.add('show');
   }
 
   function closeNote() {
     noteModal.classList.remove('show');
     currentNoteId = null;
+    if (audioPlayer) {
+      audioPlayer.pause();
+      audioPlayer.removeAttribute('src');
+      audioPlayer.load();
+    }
   }
 
   modalCloseBtn.addEventListener('click', closeNote);
@@ -828,7 +1077,19 @@
 
   deleteNoteBtn.addEventListener('click', async () => {
     if (!currentNoteId) return;
-    if (!confirm('確定要刪除這份會議記錄嗎？此動作無法復原。')) return;
+    if (!confirm('確定要刪除這份會議記錄嗎？此動作無法復原（音檔也會一併刪除）。')) return;
+
+    // Fetch audio_path first to delete Storage file
+    const { data: noteRow } = await sb
+      .from('meeting_notes')
+      .select('audio_path')
+      .eq('id', currentNoteId)
+      .single();
+
+    if (noteRow?.audio_path) {
+      await sb.storage.from('meeting-audio').remove([noteRow.audio_path]);
+    }
+
     const { error } = await sb
       .from('meeting_notes')
       .delete()
