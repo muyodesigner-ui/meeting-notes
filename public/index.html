@@ -44,12 +44,71 @@
   .dropzone {
     display: block;
     border: 1px dashed #d2d2d7;
-    border-radius: 18px;
-    padding: 64px 32px;
+    border-radius: 14px;
+    padding: 24px 20px;
     text-align: center;
     background: #ffffff;
     cursor: pointer;
     transition: border-color 0.2s, background 0.2s;
+  }
+  .dropzone-text { font-size: 15px; color: #1d1d1f; }
+  .dropzone-hint { color: #86868b; font-size: 12px; margin-top: 6px; }
+
+  /* Upload actions row: record + file */
+  .upload-actions {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    margin-bottom: 14px;
+  }
+  .record-btn {
+    margin: 0;
+    padding: 12px 22px;
+    font-size: 15px;
+    background: #e8453d;
+    color: #fff;
+    border-radius: 980px;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .record-btn:hover:not(:disabled) { background: #d13e37; }
+  .record-btn:disabled { background: #d2d2d7; color: #86868b; }
+
+  .record-status {
+    display: none;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 16px;
+    background: #fff0f0;
+    border-radius: 12px;
+    font-size: 14px;
+    color: #c72a2a;
+  }
+  .record-status.show { display: inline-flex; }
+  .record-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #e8453d;
+    animation: pulse 1.5s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+  .record-status button {
+    margin: 0;
+    padding: 6px 14px;
+    font-size: 13px;
+    background: #fff;
+    color: #c72a2a;
+  }
+  .record-status button:hover:not(:disabled) { background: #ffe0e0; }
+
+  .divider-text {
+    color: #86868b;
+    font-size: 13px;
   }
   .dropzone:hover, .dropzone.dragover {
     border-color: #0071e3;
@@ -149,13 +208,13 @@
   .view.show { display: block; }
 
   /* Notes list */
-  .notes-section { margin-top: 56px; }
-  .section-title { font-size: 24px; font-weight: 600; letter-spacing: -0.01em; margin-bottom: 20px; }
+  .notes-section { margin-top: 40px; padding-top: 28px; border-top: 1px solid #e8e8ea; }
+  .section-title { font-size: 28px; font-weight: 600; letter-spacing: -0.02em; margin-bottom: 24px; }
   .notes-list { display: flex; flex-direction: column; gap: 8px; }
   .note-item {
-    padding: 16px 20px;
+    padding: 20px 24px;
     background: #fff;
-    border-radius: 12px;
+    border-radius: 14px;
     cursor: pointer;
     transition: transform 0.15s, box-shadow 0.15s;
     display: flex;
@@ -164,7 +223,7 @@
     gap: 16px;
   }
   .note-item:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0,0,0,0.06); }
-  .note-item-title { font-weight: 500; font-size: 16px; color: #1d1d1f; }
+  .note-item-title { font-weight: 500; font-size: 17px; color: #1d1d1f; }
   .note-item-date { color: #86868b; font-size: 13px; white-space: nowrap; }
   .notes-empty, .notes-loading {
     padding: 32px 24px;
@@ -343,10 +402,24 @@
 
   <p class="subtitle">上傳會議錄音，自動產出繁體中文會議記錄</p>
 
+  <div class="upload-actions">
+    <button type="button" id="record-btn" class="record-btn">
+      🎙 開始錄音
+    </button>
+    <span class="divider-text">或上傳既有音檔 ↓</span>
+  </div>
+
+  <div id="record-status" class="record-status">
+    <span class="record-dot"></span>
+    <span>錄音中</span>
+    <span id="record-timer">00:00</span>
+    <button type="button" id="stop-record-btn">⏹ 停止並產生記錄</button>
+  </div>
+
   <form id="form">
     <label class="dropzone" id="dropzone">
       <div id="dropzone-text">
-        <div style="font-size: 18px;">點此選擇音檔，或拖曳進來</div>
+        <div class="dropzone-text">點此選擇音檔，或拖曳進來</div>
         <div class="dropzone-hint">支援 .mp3 / .m4a / .wav / .webm / .ogg（最大 200 MB）</div>
       </div>
       <div class="filename" id="filename"></div>
@@ -474,10 +547,7 @@
     }
   });
 
-  form.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    if (!selectedFile) return;
-
+  async function uploadAudio(file) {
     submitBtn.disabled = true;
     resultEl.classList.remove('show');
     statusEl.classList.add('show');
@@ -485,7 +555,7 @@
     statusEl.innerHTML = '<span class="spinner"></span>處理中，音檔越長需要越久（1 小時音檔約 2–4 分鐘）...';
 
     const fd = new FormData();
-    fd.append('audio', selectedFile);
+    fd.append('audio', file);
 
     try {
       const { data: { session } } = await sb.auth.getSession();
@@ -514,6 +584,119 @@
     } finally {
       submitBtn.disabled = false;
     }
+  }
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!selectedFile) return;
+    await uploadAudio(selectedFile);
+  });
+
+  /* ====== In-browser recording ====== */
+  const recordBtn = document.getElementById('record-btn');
+  const stopRecordBtn = document.getElementById('stop-record-btn');
+  const recordStatus = document.getElementById('record-status');
+  const recordTimerEl = document.getElementById('record-timer');
+
+  let mediaRecorder = null;
+  let recordedChunks = [];
+  let recordStartTime = null;
+  let recordTimerId = null;
+  let audioCtx = null;
+  let activeStreams = [];
+
+  function fmtDuration(ms) {
+    const s = Math.floor(ms / 1000);
+    const mm = String(Math.floor(s / 60)).padStart(2, '0');
+    const ss = String(s % 60).padStart(2, '0');
+    return `${mm}:${ss}`;
+  }
+
+  recordBtn.addEventListener('click', async () => {
+    try {
+      let displayStream = null;
+      try {
+        displayStream = await navigator.mediaDevices.getDisplayMedia({
+          audio: { echoCancellation: false, noiseSuppression: false },
+          video: true,
+        });
+      } catch (e) {
+        console.warn('使用者取消分享分頁或不支援，只錄麥克風', e);
+      }
+
+      const micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const dest = audioCtx.createMediaStreamDestination();
+
+      let hasTabAudio = false;
+      if (displayStream && displayStream.getAudioTracks().length > 0) {
+        audioCtx.createMediaStreamSource(displayStream).connect(dest);
+        hasTabAudio = true;
+      }
+      if (micStream.getAudioTracks().length > 0) {
+        audioCtx.createMediaStreamSource(micStream).connect(dest);
+      }
+
+      activeStreams = [displayStream, micStream].filter(Boolean);
+
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+        ? 'audio/webm;codecs=opus'
+        : 'audio/webm';
+      mediaRecorder = new MediaRecorder(dest.stream, { mimeType });
+      recordedChunks = [];
+
+      mediaRecorder.addEventListener('dataavailable', (e) => {
+        if (e.data.size > 0) recordedChunks.push(e.data);
+      });
+
+      mediaRecorder.addEventListener('stop', async () => {
+        recordStatus.classList.remove('show');
+        recordBtn.disabled = false;
+        clearInterval(recordTimerId);
+        activeStreams.forEach((s) => s.getTracks().forEach((t) => t.stop()));
+        if (audioCtx) { audioCtx.close(); audioCtx = null; }
+
+        if (recordedChunks.length === 0) return;
+        const blob = new Blob(recordedChunks, { type: mimeType });
+        const ts = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+        const file = new File([blob], `recording-${ts}.webm`, { type: 'audio/webm' });
+        recordedChunks = [];
+        await uploadAudio(file);
+      });
+
+      if (displayStream) {
+        displayStream.getVideoTracks().forEach((t) => {
+          t.addEventListener('ended', () => {
+            if (mediaRecorder?.state === 'recording') mediaRecorder.stop();
+          });
+        });
+      }
+
+      mediaRecorder.start(1000);
+      recordBtn.disabled = true;
+      recordStatus.classList.add('show');
+      recordStartTime = Date.now();
+      recordTimerEl.textContent = '00:00';
+      recordTimerId = setInterval(() => {
+        recordTimerEl.textContent = fmtDuration(Date.now() - recordStartTime);
+      }, 500);
+
+      if (!hasTabAudio && displayStream === null) {
+        statusEl.classList.add('show');
+        statusEl.classList.remove('error');
+        statusEl.innerHTML = '⚠️ 沒有分享分頁音訊，只錄到麥克風。如果要錄 Google Meet 其他人的聲音，請重新開始並選擇 Meet 分頁 + 勾「分享分頁音訊」';
+      }
+    } catch (err) {
+      console.error(err);
+      alert('無法開始錄音：' + (err.message || err));
+      recordBtn.disabled = false;
+      recordStatus.classList.remove('show');
+    }
+  });
+
+  stopRecordBtn.addEventListener('click', () => {
+    if (mediaRecorder?.state === 'recording') mediaRecorder.stop();
   });
 
   copyBtn.addEventListener('click', async () => {
