@@ -115,30 +115,62 @@ Deno.serve(async (req: Request) => {
 
     const audioB64 = await blobToBase64(blob);
 
-    const geminiRes = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{
-            role: 'user',
-            parts: [
-              { inlineData: { mimeType, data: audioB64 } },
-              { text: PROMPT },
-            ],
-          }],
-          generationConfig: {
-            responseMimeType: 'application/json',
-            responseSchema: RESPONSE_SCHEMA,
-          },
-        }),
+    const geminiBody = JSON.stringify({
+      contents: [{
+        role: 'user',
+        parts: [
+          { inlineData: { mimeType, data: audioB64 } },
+          { text: PROMPT },
+        ],
+      }],
+      generationConfig: {
+        responseMimeType: 'application/json',
+        responseSchema: RESPONSE_SCHEMA,
       },
-    );
+    });
 
-    if (!geminiRes.ok) {
-      const errText = await geminiRes.text();
-      return json({ error: 'Gemini API 失敗', status: geminiRes.status, detail: errText }, 500);
+    async function callGemini(model: string) {
+      return await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: geminiBody,
+        },
+      );
+    }
+
+    // Retry strategy: 2.5-flash x3 → 2.0-flash x2 → 2.5-flash-lite x1
+    const attempts: Array<{ model: string; waitMs: number }> = [
+      { model: 'gemini-2.5-flash', waitMs: 0 },
+      { model: 'gemini-2.5-flash', waitMs: 3000 },
+      { model: 'gemini-2.5-flash', waitMs: 7000 },
+      { model: 'gemini-2.0-flash', waitMs: 3000 },
+      { model: 'gemini-2.0-flash', waitMs: 7000 },
+      { model: 'gemini-2.5-flash-lite', waitMs: 3000 },
+    ];
+
+    let geminiRes: Response | null = null;
+    let lastErrText = '';
+    let lastStatus = 0;
+    for (const attempt of attempts) {
+      if (attempt.waitMs > 0) {
+        await new Promise((r) => setTimeout(r, attempt.waitMs));
+      }
+      const r = await callGemini(attempt.model);
+      if (r.ok) { geminiRes = r; break; }
+      lastStatus = r.status;
+      lastErrText = await r.text();
+      // Only retry on transient errors (503/429/500)
+      if (![500, 503, 429].includes(r.status)) break;
+    }
+
+    if (!geminiRes) {
+      return json({
+        error: 'Gemini API 多次重試後仍失敗',
+        status: lastStatus,
+        detail: lastErrText,
+      }, 500);
     }
 
     const geminiData = await geminiRes.json();

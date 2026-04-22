@@ -207,6 +207,28 @@
   .view { display: none; }
   .view.show { display: block; }
 
+  .boot-error {
+    padding: 48px 24px;
+    text-align: center;
+    max-width: 560px;
+    margin: 10vh auto;
+    background: #fff;
+    border-radius: 18px;
+    box-shadow: 0 8px 40px rgba(0,0,0,0.08);
+  }
+  .boot-error h2 { font-size: 22px; margin-bottom: 12px; }
+  .boot-error p { color: #86868b; font-size: 14px; line-height: 1.7; margin-bottom: 8px; }
+  .boot-error code { background: #f5f5f7; padding: 2px 6px; border-radius: 4px; font-size: 12px; }
+
+  .boot-loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 70vh;
+    color: #86868b;
+  }
+
   /* Notes list */
   .notes-section { margin-top: 40px; padding-top: 28px; border-top: 1px solid #e8e8ea; }
   .section-title { font-size: 28px; font-weight: 600; letter-spacing: -0.02em; margin-bottom: 24px; }
@@ -485,6 +507,11 @@
 </head>
 <body>
 
+<div id="boot-loading" class="boot-loading">
+  <div class="spinner" style="width:32px;height:32px;border-width:3px;"></div>
+  <p style="margin-top:16px;">載入中...</p>
+</div>
+
 <div id="login-view" class="view">
   <div class="login-hero">
     <h1>🎙 會議記錄工具</h1>
@@ -598,6 +625,35 @@
 </div>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script>
+  // Fallback: 若 3 秒後仍是 loading，顯示友善錯誤訊息
+  const bootLoading = document.getElementById('boot-loading');
+  const bootTimeout = setTimeout(() => {
+    if (bootLoading && bootLoading.style.display !== 'none') {
+      bootLoading.innerHTML = `
+        <div class="boot-error">
+          <h2>⚠️ 載入卡住了</h2>
+          <p>多半是你瀏覽器**擴充套件**（例如虛擬視訊、美顏、廣告封鎖器）在干擾這個網站。</p>
+          <p>請試：</p>
+          <p>① 按 <code>Ctrl + Shift + N</code> 開 <b>無痕視窗</b> 再打開此網址</p>
+          <p>② 或在網址列旁擴充套件圖示，把擋網頁的那個關掉</p>
+          <p>③ 或按 <code>F12</code> 看「Console」紅字錯誤</p>
+        </div>
+      `;
+    }
+  }, 3000);
+
+  if (!window.supabase) {
+    clearTimeout(bootTimeout);
+    bootLoading.innerHTML = `
+      <div class="boot-error">
+        <h2>⚠️ Supabase 載入失敗</h2>
+        <p>網路或擴充套件封鎖了 <code>cdn.jsdelivr.net</code>。</p>
+        <p>請用無痕視窗打開。</p>
+      </div>
+    `;
+    throw new Error('Supabase SDK not loaded');
+  }
+
   const { createClient } = window.supabase;
 
   const SUPABASE_URL = 'https://rbgjebfmjzbhgsjkojah.supabase.co';
@@ -611,15 +667,31 @@
   const userEmailEl = document.getElementById('user-email');
 
   async function checkAuth() {
-    const { data: { session } } = await sb.auth.getSession();
-    if (session) {
-      loginView.classList.remove('show');
-      appView.classList.add('show');
-      userEmailEl.textContent = session.user.email;
-      loadNotes();
-    } else {
-      loginView.classList.add('show');
-      appView.classList.remove('show');
+    try {
+      const { data: { session } } = await sb.auth.getSession();
+      clearTimeout(bootTimeout);
+      if (bootLoading) bootLoading.style.display = 'none';
+      if (session) {
+        loginView.classList.remove('show');
+        appView.classList.add('show');
+        userEmailEl.textContent = session.user.email;
+        loadNotes();
+      } else {
+        loginView.classList.add('show');
+        appView.classList.remove('show');
+      }
+    } catch (err) {
+      console.error('checkAuth error:', err);
+      clearTimeout(bootTimeout);
+      if (bootLoading) {
+        bootLoading.innerHTML = `
+          <div class="boot-error">
+            <h2>⚠️ 登入狀態檢查失敗</h2>
+            <p>${err.message || err}</p>
+            <p>請用無痕視窗重試。</p>
+          </div>
+        `;
+      }
     }
   }
 
