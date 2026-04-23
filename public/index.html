@@ -507,12 +507,7 @@
 </head>
 <body>
 
-<div id="boot-loading" class="boot-loading">
-  <div class="spinner" style="width:32px;height:32px;border-width:3px;"></div>
-  <p style="margin-top:16px;">載入中...</p>
-</div>
-
-<div id="login-view" class="view">
+<div id="login-view" class="view show">
   <div class="login-hero">
     <h1>🎙 會議記錄工具</h1>
     <p class="subtitle">請用公司 Gmail 登入</p>
@@ -625,28 +620,10 @@
 </div>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script>
-  // Fallback: 若 3 秒後仍是 loading，顯示友善錯誤訊息
-  const bootLoading = document.getElementById('boot-loading');
-  const bootTimeout = setTimeout(() => {
-    if (bootLoading && bootLoading.style.display !== 'none') {
-      bootLoading.innerHTML = `
-        <div class="boot-error">
-          <h2>⚠️ 載入卡住了</h2>
-          <p>多半是你瀏覽器**擴充套件**（例如虛擬視訊、美顏、廣告封鎖器）在干擾這個網站。</p>
-          <p>請試：</p>
-          <p>① 按 <code>Ctrl + Shift + N</code> 開 <b>無痕視窗</b> 再打開此網址</p>
-          <p>② 或在網址列旁擴充套件圖示，把擋網頁的那個關掉</p>
-          <p>③ 或按 <code>F12</code> 看「Console」紅字錯誤</p>
-        </div>
-      `;
-    }
-  }, 3000);
-
   if (!window.supabase) {
-    clearTimeout(bootTimeout);
-    bootLoading.innerHTML = `
+    document.body.innerHTML = `
       <div class="boot-error">
-        <h2>⚠️ Supabase 載入失敗</h2>
+        <h2>⚠️ 必要套件載入失敗</h2>
         <p>網路或擴充套件封鎖了 <code>cdn.jsdelivr.net</code>。</p>
         <p>請用無痕視窗打開。</p>
       </div>
@@ -669,8 +646,6 @@
   async function checkAuth() {
     try {
       const { data: { session } } = await sb.auth.getSession();
-      clearTimeout(bootTimeout);
-      if (bootLoading) bootLoading.style.display = 'none';
       if (session) {
         loginView.classList.remove('show');
         appView.classList.add('show');
@@ -682,16 +657,9 @@
       }
     } catch (err) {
       console.error('checkAuth error:', err);
-      clearTimeout(bootTimeout);
-      if (bootLoading) {
-        bootLoading.innerHTML = `
-          <div class="boot-error">
-            <h2>⚠️ 登入狀態檢查失敗</h2>
-            <p>${err.message || err}</p>
-            <p>請用無痕視窗重試。</p>
-          </div>
-        `;
-      }
+      // 保留登入畫面，不要讓頁面空白
+      loginView.classList.add('show');
+      appView.classList.remove('show');
     }
   }
 
