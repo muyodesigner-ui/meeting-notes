@@ -855,7 +855,9 @@
         if (audioCtx) { audioCtx.close(); audioCtx = null; }
 
         if (recordedChunks.length === 0) return;
-        const blob = new Blob(recordedChunks, { type: mimeType });
+        const rawBlob = new Blob(recordedChunks, { type: mimeType });
+        const buffer = await rawBlob.arrayBuffer();
+        const blob = new Blob([buffer], { type: mimeType });
         const ts = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
         const file = new File([blob], `recording-${ts}.webm`, { type: 'audio/webm' });
         const durationSec = Math.round((Date.now() - recordStartTime) / 1000);
