@@ -635,7 +635,14 @@
 
   const SUPABASE_URL = 'https://rbgjebfmjzbhgsjkojah.supabase.co';
   const SUPABASE_KEY = 'sb_publishable_tf-3s5XZTyRL5YDkvzqjSg_1WLM2x5_';
-  const sb = createClient(SUPABASE_URL, SUPABASE_KEY);
+  const sb = createClient(SUPABASE_URL, SUPABASE_KEY, {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true,
+      storage: window.localStorage,
+    },
+  });
 
   const loginView = document.getElementById('login-view');
   const appView = document.getElementById('app-view');
