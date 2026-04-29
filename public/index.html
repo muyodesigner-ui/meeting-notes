@@ -743,10 +743,35 @@
       const ts = new Date().toISOString().replace(/[:.]/g, '-');
       const audioPath = `${session.user.id}/${ts}.${ext}`;
 
-      const { error: upErr } = await sb.storage
-        .from('meeting-audio')
-        .upload(audioPath, file, { contentType: file.type || 'audio/webm' });
-      if (upErr) throw new Error('上傳音檔失敗：' + upErr.message);
+      // 用 fetch 直接上傳繞過 supabase-js storage SDK 偶爾卡住不 resolve 的 bug
+      // 加 5 分鐘 AbortController 超時保險
+      const uploadController = new AbortController();
+      const uploadTimeout = setTimeout(() => uploadController.abort(), 5 * 60 * 1000);
+      let upRes;
+      try {
+        upRes = await fetch(
+          `${SUPABASE_URL}/storage/v1/object/meeting-audio/${audioPath}`,
+          {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${session.access_token}`,
+              'Content-Type': file.type || 'audio/webm',
+              'x-upsert': 'false',
+            },
+            body: file,
+            signal: uploadController.signal,
+          },
+        );
+      } catch (e) {
+        if (e.name === 'AbortError') throw new Error('上傳音檔超時（5 分鐘）');
+        throw e;
+      } finally {
+        clearTimeout(uploadTimeout);
+      }
+      if (!upRes.ok) {
+        const errText = await upRes.text();
+        throw new Error('上傳音檔失敗：' + errText);
+      }
 
       statusEl.innerHTML = '<span class="spinner"></span>處理中，正在產生摘要與逐字稿（1 小時約 2–4 分鐘）...';
 
