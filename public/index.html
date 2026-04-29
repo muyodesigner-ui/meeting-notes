@@ -755,8 +755,9 @@
             method: 'POST',
             headers: {
               Authorization: `Bearer ${session.access_token}`,
+              apikey: SUPABASE_KEY,
               'Content-Type': file.type || 'audio/webm',
-              'x-upsert': 'false',
+              'x-upsert': 'true',
             },
             body: file,
             signal: uploadController.signal,
