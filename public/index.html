@@ -859,10 +859,22 @@
         const buffer = await rawBlob.arrayBuffer();
         const blob = new Blob([buffer], { type: mimeType });
         const ts = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
-        const file = new File([blob], `recording-${ts}.webm`, { type: 'audio/webm' });
-        const durationSec = Math.round((Date.now() - recordStartTime) / 1000);
+        const filename = `recording-${ts}.webm`;
         recordedChunks = [];
-        await uploadAudio(file, durationSec);
+
+        // 直接下載到本機,讓使用者再手動上傳(避開 MediaRecorder webm 上傳問題)
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+
+        statusEl.classList.add('show');
+        statusEl.classList.remove('error');
+        statusEl.innerHTML = `✅ 錄音已下載：${filename}<br>請從上方「點此選擇音檔」把檔案上傳產生會議記錄`;
       });
 
       if (displayStream) {
