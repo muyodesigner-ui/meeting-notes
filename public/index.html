@@ -552,10 +552,10 @@
     <label class="dropzone" id="dropzone">
       <div id="dropzone-text">
         <div class="dropzone-text">點此選擇音檔，或拖曳進來</div>
-        <div class="dropzone-hint">支援 .mp3 / .m4a / .wav / .webm / .ogg（最大 200 MB）</div>
+        <div class="dropzone-hint">支援 .mp3 / .m4a / .wav / .ogg / .flac / .aac（最大 200 MB）</div>
       </div>
       <div class="filename" id="filename"></div>
-      <input type="file" id="file" name="audio" accept="audio/*,video/mp4,video/webm" />
+      <input type="file" id="file" name="audio" accept=".mp3,.m4a,.wav,.ogg,.flac,.aac,audio/mpeg,audio/mp4,audio/wav,audio/ogg,audio/flac,audio/aac" />
     </label>
     <button type="submit" id="submit" disabled>產生會議記錄</button>
   </form>
