@@ -881,14 +881,56 @@
 
         if (recordedChunks.length === 0) return;
         const rawBlob = new Blob(recordedChunks, { type: mimeType });
-        const buffer = await rawBlob.arrayBuffer();
-        const blob = new Blob([buffer], { type: mimeType });
-        const ts = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
-        const filename = `recording-${ts}.webm`;
         recordedChunks = [];
 
-        // 直接下載到本機,讓使用者再手動上傳(避開 MediaRecorder webm 上傳問題)
-        const url = URL.createObjectURL(blob);
+        statusEl.classList.add('show');
+        statusEl.classList.remove('error');
+        statusEl.innerHTML = '<span class="spinner"></span>正在轉檔成 WAV(Gemini 不認 webm)...';
+
+        // 把 webm/opus 轉成 16kHz 單聲道 WAV(Gemini 支援的格式)
+        const buffer = await rawBlob.arrayBuffer();
+        const tmpCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const decoded = await tmpCtx.decodeAudioData(buffer);
+        await tmpCtx.close();
+
+        const targetRate = 16000;
+        const offlineCtx = new OfflineAudioContext(1, Math.ceil(decoded.duration * targetRate), targetRate);
+        const src = offlineCtx.createBufferSource();
+        src.buffer = decoded;
+        src.connect(offlineCtx.destination);
+        src.start();
+        const resampled = await offlineCtx.startRendering();
+
+        // AudioBuffer → 16-bit PCM WAV blob
+        const samples = resampled.getChannelData(0);
+        const wavBuf = new ArrayBuffer(44 + samples.length * 2);
+        const dv = new DataView(wavBuf);
+        const writeStr = (off, s) => { for (let i = 0; i < s.length; i++) dv.setUint8(off + i, s.charCodeAt(i)); };
+        writeStr(0, 'RIFF');
+        dv.setUint32(4, 36 + samples.length * 2, true);
+        writeStr(8, 'WAVE');
+        writeStr(12, 'fmt ');
+        dv.setUint32(16, 16, true);
+        dv.setUint16(20, 1, true);
+        dv.setUint16(22, 1, true);
+        dv.setUint32(24, targetRate, true);
+        dv.setUint32(28, targetRate * 2, true);
+        dv.setUint16(32, 2, true);
+        dv.setUint16(34, 16, true);
+        writeStr(36, 'data');
+        dv.setUint32(40, samples.length * 2, true);
+        let off = 44;
+        for (let i = 0; i < samples.length; i++, off += 2) {
+          const s = Math.max(-1, Math.min(1, samples[i]));
+          dv.setInt16(off, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+        }
+        const wavBlob = new Blob([wavBuf], { type: 'audio/wav' });
+
+        const ts = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+        const filename = `recording-${ts}.wav`;
+
+        // 下載到本機
+        const url = URL.createObjectURL(wavBlob);
         const a = document.createElement('a');
         a.href = url;
         a.download = filename;
@@ -897,9 +939,7 @@
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
 
-        statusEl.classList.add('show');
-        statusEl.classList.remove('error');
-        statusEl.innerHTML = `✅ 錄音已下載：${filename}<br>請從上方「點此選擇音檔」把檔案上傳產生會議記錄`;
+        statusEl.innerHTML = `✅ 錄音已轉成 WAV 並下載：${filename}<br>請從上方「點此選擇音檔」把檔案上傳產生會議記錄`;
       });
 
       if (displayStream) {
