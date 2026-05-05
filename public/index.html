@@ -877,6 +877,7 @@
         recordStatus.classList.remove('show');
         recordBtn.disabled = false;
         clearInterval(recordTimerId);
+        const recordedDurationMs = recordStartTime ? Date.now() - recordStartTime : 0;
         activeStreams.forEach((s) => s.getTracks().forEach((t) => t.stop()));
         if (audioCtx) { audioCtx.close(); audioCtx = null; }
 
@@ -886,9 +887,9 @@
 
         statusEl.classList.add('show');
         statusEl.classList.remove('error');
-        statusEl.innerHTML = '<span class="spinner"></span>正在轉檔成 WAV(Gemini 不認 webm)...';
+        statusEl.innerHTML = '<span class="spinner"></span>正在轉檔成 WAV...';
 
-        // 把 webm/opus 轉成 16kHz 單聲道 WAV(Gemini 支援的格式)
+        // 把 webm/opus 轉成 16kHz 單聲道 WAV
         const buffer = await rawBlob.arrayBuffer();
         const tmpCtx = new (window.AudioContext || window.webkitAudioContext)();
         const decoded = await tmpCtx.decodeAudioData(buffer);
@@ -927,20 +928,52 @@
         }
         const wavBlob = new Blob([wavBuf], { type: 'audio/wav' });
 
-        const ts = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
-        const filename = `recording-${ts}.wav`;
+        // 上傳到 Supabase Storage + 建立會議記錄（不跑摘要 / 逐字稿）
+        statusEl.innerHTML = '<span class="spinner"></span>上傳錄音到雲端...';
+        try {
+          const { data: { session } } = await sb.auth.getSession();
+          if (!session) throw new Error('未登入');
 
-        // 下載到本機
-        const url = URL.createObjectURL(wavBlob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
+          const now = new Date();
+          const ts = now.toISOString().replace(/[:.]/g, '-');
+          const audioPath = `${session.user.id}/${ts}.wav`;
+          const title = `錄音 ${formatDate(now.toISOString())}`;
 
-        statusEl.innerHTML = `✅ 錄音已轉成 WAV 並下載：${filename}<br>請從上方「點此選擇音檔」把檔案上傳產生會議記錄`;
+          const upRes = await fetch(
+            `${SUPABASE_URL}/storage/v1/object/meeting-audio/${audioPath}`,
+            {
+              method: 'POST',
+              headers: {
+                Authorization: `Bearer ${session.access_token}`,
+                apikey: SUPABASE_KEY,
+                'Content-Type': 'audio/wav',
+                'x-upsert': 'true',
+              },
+              body: wavBlob,
+            },
+          );
+          if (!upRes.ok) {
+            const errText = await upRes.text();
+            throw new Error('上傳失敗：' + errText);
+          }
+
+          const { error: insertErr } = await sb
+            .from('meeting_notes')
+            .insert({
+              title,
+              content: '',
+              audio_path: audioPath,
+              duration_seconds: Math.round(recordedDurationMs / 1000),
+              created_by: session.user.id,
+            });
+          if (insertErr) throw new Error('儲存失敗：' + insertErr.message);
+
+          statusEl.innerHTML = `✅ 錄音已儲存：${title}`;
+          loadNotes();
+        } catch (err) {
+          statusEl.classList.add('error');
+          statusEl.textContent = '錯誤：' + (err.message || '處理失敗');
+        }
       });
 
       if (displayStream) {
